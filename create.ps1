@@ -185,13 +185,11 @@ function Resolve-HTTPError {
 
 if(-not($dryRun -eq $true)){
     try {
-        try {
-            $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
-        } catch {
-            $ex = $PSItem
-            Resolve-HTTPError -Error $ex
-        }
+        Write-Verbose "Creating user '$($account.UserName)'"
+        Write-Verbose "Retrieving accessToken"
+        $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
+        [System.Collections.Generic.List[object]]$roles = @()
         [System.Collections.Generic.List[object]]$emailList = @()
         $emailList.Add(
             [PSCustomObject]@{
@@ -201,8 +199,6 @@ if(-not($dryRun -eq $true)){
                 value = $account.EmailAddress
             }
         )
-
-        [System.Collections.Generic.List[object]]$roles = @()
 
         $body = [ordered]@{
             schemas = @(
@@ -228,6 +224,7 @@ if(-not($dryRun -eq $true)){
         Write-Verbose 'Adding Authorization headers'
         $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
         $headers.Add("Authorization", "Bearer $accessToken")
+
         $splatParams = @{
             Uri = $($config.BaseUrl)
             Endpoint = 'Users'
@@ -236,7 +233,6 @@ if(-not($dryRun -eq $true)){
             Method = 'Post'
             IsConnectionTls12 = $($config.IsConnectionTls12)
         }
-        Write-Verbose "Creating user '$($account.UserName)'"
         $results = Invoke-GenericScimRestMethod @splatParams
         Write-Verbose "Finished creating user with id: '$($results.id)'"
         $success = $true
