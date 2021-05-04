@@ -96,8 +96,6 @@ The connector is created for both Windows PowerShell 5.1 and PowerShell Core 7.0
 
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/360012557600-Configure-a-custom-PowerShell-source-system) pages_
 
-> _If you need help, feel free to ask questions on our [forum](https://forum.helloid.com)_
-
 ## Contributing
 
 Find a bug or have an idea! Open an issue or submit a pull request!
