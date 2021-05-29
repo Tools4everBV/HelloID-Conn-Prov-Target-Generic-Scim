@@ -38,31 +38,12 @@ Before implementing the connector in HelloID, make sure to test the connector in
 | ClientID          | The ClientID for the SCIM API                      |
 | ClientSecret      | The ClientSecret for the SCIM API                  |
 | Uri               | The Uri to the SCIM API. <http://some-api/v1/scim> |
-|             |                                            |
 
 ### Prerequisites
 
 - When using the HelloID On-Premises agent, Windows PowerShell 5.1 must be installed.
 
 - When the connector needs to be modified, make sure to have installed VSCode/PowerShell extension.
-
-### Contents
-
-| Files       | Description                                |
-| ----------- | ------------------------------------------ |
-| config.json | The configuration settings for HelloID                      |
-| create.ps1  | The connector _create_ file that will create an account in the target system |
-|             |                                            |
-
-### PowerShell functions
-
-The _create_.ps1_ file contains a few functions. All of which contain basic comment based help.
-
-The functions that are available in version _1.0.0.0_:
-
-- Get-GenericScimOAuthToken
-- Invoke-GenericScimRestMethod
-- Resolve-HTTPError
 
 ### Supported PowerShell versions
 
@@ -90,7 +71,6 @@ The connector is created for both Windows PowerShell 5.1 and PowerShell Core 7.0
 | ClientSecret      | The ClientSecret for the SCIM API                  |
 | Uri               | The Uri to the SCIM API. <http://some-api/v1/scim> |
 | IsConnectionTls12 | Enables TLS 1.2 (Only necessary when using Windows PowerShell 5.1)        |
-|             |                                            |
 
 ## Getting help
 
