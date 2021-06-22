@@ -288,7 +288,6 @@ if (-not($dryRun -eq $true)) {
 $result = [PSCustomObject]@{
     Success          = $success
     Account          = $account
-    AccountReference = $aRef
     AuditDetails     = $auditMessage
 }
 
