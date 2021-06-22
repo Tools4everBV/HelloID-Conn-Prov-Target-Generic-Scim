@@ -1,0 +1,31 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "SCIM-Target-Intro",
+  "steps": [
+    {
+      "file": "ct/create.ps1",
+      "description": "The 'Get-GenericScimOAuthToken' function retrieves the accessToken. The function requires a 'ClientID' and 'ClientSecret'. Your application might use a different way of authenticating. Change this function accordingly.",
+      "line": 29
+    },
+    {
+      "file": "ct/create.ps1",
+      "description": "The 'accessToken' will be retrieved within the '$dryRun' and will be added to the 'AuthorizationHeaders'.",
+      "line": 216
+    },
+    {
+      "file": "ct/create.ps1",
+      "description": "The 'AuthorizationHeaders' containing the accessToken. The\r\n\r\nThose three things (the 'Get-GenericScimOAuthToken', the '$accessToken' variable and the 'AuthorizationHeaders' might have to be changed according to the method of authentication your application is using)",
+      "line": 252
+    },
+    {
+      "file": "ct/create.ps1",
+      "description": "The '$account' object contains all the properties that will be created within your application. These properties might vary in your application.",
+      "line": 15
+    },
+    {
+      "file": "ct/create.ps1",
+      "description": "In the '$body' all the properties are added and converted to a json string. The look and feel of the body is standard for any SCIM API. The properties however might be different for your application.",
+      "line": 229
+    }
+  ]
+}
