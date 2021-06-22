@@ -20,15 +20,9 @@
 
 ## Introduction
 
-The _'HelloID-Conn-Prov-Target-Generic-Scim'_ connector is a working example target connector based on scim based API's. http://www.simplecloud.info.
+The _'HelloID-Conn-Prov-Target-Generic-Scim'_ connector is a working example target connector based on scim based API's. http://www.simplecloud.info. You can use this connector as a basis for applications using an API based on SCIM. The example connector uses OAuth for authentication. Before implementing this connector in your environment, make sure to check if OAUth is supported or if there's a different method of authentication.
 
 ## Getting started
-
-This connector is a working example for a scim based API.
-
-> Although this is a working example, changes might have to be made according to your own environment.
-
-Before implementing the connector in HelloID, make sure to test the connector in VSCode.
 
 ### Connection settings
 
@@ -46,7 +40,7 @@ Before implementing the connector in HelloID, make sure to test the connector in
 
 ### Supported PowerShell versions
 
-The connector is created for both Windows PowerShell 5.1 and PowerShell Core 7.0.3. This means that the connector can be executed in both cloud and on-premises using the HelloID Agent.
+The connector is created for both Windows PowerShell 5.1 and PowerShell Core. This means that the connector can be executed in both cloud and on-premises using the HelloID Agent.
 
 > Older versions of Windows PowerShell are not supported.
 
