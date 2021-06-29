@@ -5,6 +5,7 @@
     "defaultValue": "",
     "templateOptions": {
       "label": "ClientID",
+      "description": "The ClientID for the SCIM API.",
       "required": true
     }
   },
@@ -14,6 +15,7 @@
     "defaultValue": "",
     "templateOptions": {
       "label": "ClientSecret",
+      "description": "The ClientSecret for the SCIM API.",
       "required": true
     }
   },
@@ -23,17 +25,9 @@
     "defaultValue": "",
     "templateOptions": {
       "label": "BaseUrl",
-      "placeholder": "https://SomeCoolApp/v1/scim",
+      "description": "The URL to the application",
+      "placeholder": "",
       "required": true
-    }
-  },
-  {
-    "key": "IsConnectionTls12",
-    "type": "checkbox",
-    "defaultValue": true,
-    "templateOptions": {
-      "label": "Enables TLS1.2",
-      "required": false
     }
   }
 ]
