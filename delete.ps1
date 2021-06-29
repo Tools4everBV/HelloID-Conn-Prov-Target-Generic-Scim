@@ -1,9 +1,10 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Delete
 #
-# Version: 1.0.0.0
+# Version: 1.0.0.1
 #####################################################
-$VerbosePreference = "Continue"
+$action = 'DeleteAccount'
+$VerbosePreference = 'Continue'
 
 # Initialize default value's
 $config = $configuration | ConvertFrom-Json
@@ -61,86 +62,6 @@ function Get-GenericScimOAuthToken {
     }
 }
 
-function Invoke-GenericScimRestMethod {
-    <#
-    .SYNOPSIS
-    Post data to a SCIM API <http://www.simplecloud.info/>
-
-    .PARAMETER Uri
-    The Uri to the SCIM API. <http://some-api/v1/scim>
-
-    .PARAMETER Endpoint
-    The path to the specific endpoint being queried. The endpoints follow the standards of the SCIM implementation
-
-    .PARAMETER Headers
-    The headers containing the AccessToken
-
-    .PARAMETER Body
-    The JSON body
-
-    .PARAMETER Method
-    The HTTP method. For example: POST, PATCH or PUT
-
-    .PARAMETER IsConnectionTls12
-    Adds TLS1.2 to the outgoing connection
-    #>
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [Uri]
-        $Uri,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $Endpoint,
-
-        [Parameter(Mandatory = $true)]
-        [System.Collections.IDictionary]
-        $Headers,
-
-        [Parameter(Mandatory = $true)]
-        [object]
-        $Body,
-
-        [Parameter(Mandatory = $true)]
-        [Microsoft.PowerShell.Commands.WebRequestMethod]
-        $Method,
-
-        [Parameter(Mandatory = $false)]
-        [bool]
-        $IsConnectionTls12
-    )
-
-    process {
-        try {
-            Write-Verbose "Invoking command '$($MyInvocation.MyCommand)' to endpoint '$Endpoint'"
-            Write-Verbose "Setting 'Invoke-RestMethod' parameters: '$($PSBoundParameters.Keys)'"
-            $splatRestMethodParameters = @{
-                Uri         = "$Uri/$($Endpoint)"
-                Method      = $Method
-                ContentType = 'application/json'
-                Headers     = $Headers
-            }
-
-            if ($IsConnectionTls12) {
-                Write-Verbose 'Switching to TLS 1.2'
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-            }
-
-            if ($body) {
-                Write-Verbose 'adding body to request'
-                $splatRestMethodParameters['Body'] = $Body
-            }
-            Invoke-RestMethod @splatRestMethodParameters
-        }
-        catch {
-            $PSCmdlet.ThrowTerminatingError($PSItem)
-        }
-    }
-}
-
 function Resolve-HTTPError {
     [CmdletBinding()]
     param (
@@ -152,27 +73,26 @@ function Resolve-HTTPError {
     process {
         $HttpErrorObj = @{
             FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
-            InvocationInfo        = $ErrorObject.InvocationInfo.MyCommand
-            TargetObject          = $ErrorObject.TargetObject.RequestUri
+            MyCommand             = $ErrorObject.InvocationInfo.MyCommand
+            RequestUri            = $ErrorObject.TargetObject.RequestUri
         }
         if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') {
             $HttpErrorObj['ErrorMessage'] = $ErrorObject.ErrorDetails.Message
-        }
-        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+        } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             $stream = $ErrorObject.Exception.Response.GetResponseStream()
             $stream.Position = 0
             $streamReader = New-Object System.IO.StreamReader $Stream
             $errorResponse = $StreamReader.ReadToEnd()
             $HttpErrorObj['ErrorMessage'] = $errorResponse
         }
-        Write-Output "'$($HttpErrorObj.ErrorMessage)', TargetObject: '$($HttpErrorObj.TargetObject), InvocationCommand: '$($HttpErrorObj.InvocationInfo)"
+        Write-Output "'$($HttpErrorObj.ErrorMessage)', TargetObject: '$($HttpErrorObj.RequestUri), InvocationCommand: '$($HttpErrorObj.MyCommand)"
     }
 }
 #EndRegion
 
 if (-not($dryRun -eq $true)) {
     try {
-        Write-Verbose "Deleting user '$($personObj.DisplayName)'"
+        Write-Verbose "Deleting account '$($aRef)' for '$($personObj.DisplayName)'"
         Write-Verbose "Retrieving accessToken"
         $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
@@ -197,32 +117,33 @@ if (-not($dryRun -eq $true)) {
         $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
         $headers.Add("Authorization", "Bearer $accessToken")
         $splatParams = @{
-            Uri               = $($config.BaseUrl)
-            Endpoint          = "Users/$aRef"
+            Uri               = "$($config.BaseUrl)/scim/v2/Users/$aRef"
             Headers           = $headers
             Body              = $body
             Method            = 'Patch'
             IsConnectionTls12 = $($config.IsConnectionTls12)
         }
-        $results = Invoke-GenericScimRestMethod @splatParams
-        Write-Verbose "Finished deleting user with id: '$($results.id)'"
-        $success = $true
-        $auditLogs.Add([PSCustomObject]@{
-            Message = "Account for '$($personObj.DisplayName)' successfully Deleted"
-            IsError = $False
-        })
-    }
-    catch {
+        $results = Invoke-RestMethod @splatParams
+        if ($results.id){
+            $logMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' successfully deleted"
+            Write-Verbose $logMessage
+            $success = $true
+            $auditLogs.Add([PSCustomObject]@{
+                Action  = $action
+                Message = $logMessage
+                IsError = $False
+            })
+        }
+    } catch {
         $ex = $PSItem
         if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account for '$($personObj.DisplayName)' not deleted. Error: $errorMessage"
-        }
-        else {
-            $auditMessage = "Account for '$($personObj.DisplayName)' not deleted. Error: $($ex.Exception.Message)"
+            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not deleted. Error: $errorMessage"
+        } else {
+            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not deleted. Error: $($ex.Exception.Message)"
         }
         $auditLogs.Add([PSCustomObject]@{
-                Action  = "CreateAccount"
+                Action  = $action
                 Message = $auditMessage
                 IsError = $true
             })
