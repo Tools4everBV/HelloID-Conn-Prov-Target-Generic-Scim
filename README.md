@@ -56,14 +56,11 @@ The connector is created for both Windows PowerShell 5.1 and PowerShell Core. Th
 
 5. Go to the _Configuration_ tab and fill in the required fields.
 
-![config](./assets/configuration.png)
-
 | Parameter         | Description                                        |
 | ----------------- | -------------------------------------------------- |
 | ClientID          | The ClientID for the SCIM API                      |
 | ClientSecret      | The ClientSecret for the SCIM API                  |
 | Uri               | The Uri to the SCIM API. <http://some-api/v1/scim> |
-| IsConnectionTls12 | Enables TLS 1.2 (Only necessary when using Windows PowerShell 5.1)        |
 
 ## Getting help
 
