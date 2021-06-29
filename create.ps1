@@ -148,7 +148,6 @@ if (-not($dryRun -eq $true)) {
             Headers           = $headers
             Body              = $body
             Method            = 'Post'
-            IsConnectionTls12 = $($config.IsConnectionTls12)
         }
 
         $results = Invoke-RestMethod @splatParams
