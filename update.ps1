@@ -176,7 +176,6 @@ if (-not($dryRun -eq $true)) {
             Headers           = $headers
             Body              = $body
             Method            = 'Patch'
-            IsConnectionTls12 = $($config.IsConnectionTls12)
         }
         $results = Invoke-RestMethod @splatParams
         if ($results.id){
