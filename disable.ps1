@@ -127,7 +127,6 @@ if (-not($dryRun -eq $true)) {
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
-                Action  = $action
                 Message = $logMessage
                 IsError = $False
             })
@@ -141,7 +140,6 @@ if (-not($dryRun -eq $true)) {
             $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not disabled. Error: $($ex.Exception.Message)"
         }
         $auditLogs.Add([PSCustomObject]@{
-                Action  = $action
                 Message = $auditMessage
                 IsError = $true
             })
