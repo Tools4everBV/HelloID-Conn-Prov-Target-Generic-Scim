@@ -1,14 +1,13 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Update
 #
-# Version: 1.0.0.1
+# Version: 1.0.0.2
 #####################################################
-$action = 'UpdateAccount'
 $VerbosePreference = 'Continue'
 
 # Initialize default value's
 $config = $configuration | ConvertFrom-Json
-$personObj = $person | ConvertFrom-Json
+$p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $pd = $personDifferences | ConvertFrom-Json
 $success = $false
@@ -105,7 +104,7 @@ function Resolve-HTTPError {
 
 if (-not($dryRun -eq $true)) {
     try {
-        Write-Verbose "Updating account '$($aRef)' for '$($personObj.DisplayName)'"
+        Write-Verbose "Updating account '$($aRef)' for '$($p.DisplayName)'"
         Write-Verbose 'Retrieving accessToken'
         $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
@@ -179,7 +178,7 @@ if (-not($dryRun -eq $true)) {
         }
         $results = Invoke-RestMethod @splatParams
         if ($results.id){
-            $logMessage = "Account '$($aRef) for '$($personObj.DisplayName)' successfully updated"
+            $logMessage = "Account '$($aRef) for '$($p.DisplayName)' successfully updated"
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
@@ -192,9 +191,9 @@ if (-not($dryRun -eq $true)) {
         $ex = $PSItem
         if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not updated. Error: $errorMessage"
+            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not updated. Error: $errorMessage"
         } else {
-            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not updated. Error: $($ex.Exception.Message)"
+            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not updated. Error: $($ex.Exception.Message)"
         }
         $auditLogs.Add([PSCustomObject]@{
                 Action  = $action
@@ -208,7 +207,6 @@ if (-not($dryRun -eq $true)) {
 $result = [PSCustomObject]@{
     Success          = $success
     Account          = $account
-    AccountReference = $aRef
     AuditDetails     = $auditMessage
 }
 
