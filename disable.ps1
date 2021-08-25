@@ -1,14 +1,13 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Disable
 #
-# Version: 1.0.0.0
+# Version: 1.0.0.1
 #####################################################
-$action = 'DisableAccount'
 $VerbosePreference = 'Continue'
 
 # Initialize default value's
 $config = $configuration | ConvertFrom-Json
-$personObj = $person | ConvertFrom-Json
+$p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $success = $false
 $auditLogs = New-Object Collections.Generic.List[PSCustomObject]
@@ -92,8 +91,8 @@ function Resolve-HTTPError {
 
 if (-not($dryRun -eq $true)) {
     try {
-        Write-Verbose "Disabling account '$($aRef)' for '$($personObj.DisplayName)'"
-        Write-Verbose "Retrieving accessToken"
+        Write-Verbose "Disabling account '$($aRef)' for '$($p.DisplayName)'"
+        Write-Verbose "Retrieving accessToken
         $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
         [System.Collections.Generic.List[object]]$operations = @()
@@ -124,7 +123,7 @@ if (-not($dryRun -eq $true)) {
         }
         $results = Invoke-RestMethod @splatParams
         if ($results.id){
-            $logMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' successfully disabled"
+            $logMessage = "Account '$($aRef)' for '$($p.DisplayName)' successfully disabled"
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
@@ -137,9 +136,9 @@ if (-not($dryRun -eq $true)) {
         $ex = $PSItem
         if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not disabled. Error: $errorMessage"
+            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not disabled. Error: $errorMessage"
         } else {
-            $auditMessage = "Account '$($aRef)' for '$($personObj.DisplayName)' not disabled. Error: $($ex.Exception.Message)"
+            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not disabled. Error: $($ex.Exception.Message)"
         }
         $auditLogs.Add([PSCustomObject]@{
                 Action  = $action
@@ -153,7 +152,6 @@ if (-not($dryRun -eq $true)) {
 $result = [PSCustomObject]@{
     Success          = $success
     Account          = $account
-    AccountReference = $aRef
     AuditDetails     = $auditMessage
 }
 
