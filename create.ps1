@@ -1,26 +1,25 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Create
 #
-# Version: 1.0.0.1
+# Version: 1.0.0.2
 #####################################################
-$action = 'CreateAccount'
 $VerbosePreference = "Continue"
 
 # Initialize default value's
 $config = $configuration | ConvertFrom-Json
-$personObj = $person | ConvertFrom-Json
+$p = $person | ConvertFrom-Json
 $success = $false
 $auditLogs = New-Object Collections.Generic.List[PSCustomObject]
 
 $account = [PSCustomObject]@{
-    ExternalId          = $personObj.ExternalId
-    UserName            = $personObj.UserName
-    GivenName           = $personObj.Name.GivenName
-    FamilyName          = $personObj.Name.FamilyName
-    FamilyNameFormatted = $personObj.DisplayName
+    ExternalId          = $p.ExternalId
+    UserName            = $p.UserName
+    GivenName           = $p.Name.GivenName
+    FamilyName          = $p.Name.FamilyName
+    FamilyNameFormatted = $p.DisplayName
     FamilyNamePrefix    = ''
     IsUserActive        = $true
-    EmailAddress        = $personObj.Contact.Business.Email
+    EmailAddress        = $p.Contact.Business.Email
     EmailAddressType    = 'Work'
     IsEmailPrimary      = $true
 }
@@ -104,7 +103,7 @@ function Resolve-HTTPError {
 
 if (-not($dryRun -eq $true)) {
     try {
-        Write-Verbose "Creating account for '$($personObj.DisplayName)'"
+        Write-Verbose "Creating account for '$($p.DisplayName)'"
         Write-Verbose 'Retrieving accessToken'
         $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
@@ -152,11 +151,10 @@ if (-not($dryRun -eq $true)) {
 
         $results = Invoke-RestMethod @splatParams
         if ($results.id){
-            $logMessage = "Account for '$($personObj.DisplayName)' successfully created with id: '$($results.id)'"
+            $logMessage = "Account for '$($p.DisplayName)' successfully created with id: '$($results.id)'"
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
-                Action  = $action
                 Message = $logMessage
                 IsError = $False
             })
@@ -165,12 +163,11 @@ if (-not($dryRun -eq $true)) {
         $ex = $PSItem
         if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
             $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account for '$($personObj.DisplayName)' not created. Error: $errorMessage"
+            $auditMessage = "Account for '$($p.DisplayName)' not created. Error: $errorMessage"
         } else {
-            $auditMessage = "Account for '$($personObj.DisplayName)' not created. Error: $($ex.Exception.Message)"
+            $auditMessage = "Account for '$($p.DisplayName)' not created. Error: $($ex.Exception.Message)"
         }
         $auditLogs.Add([PSCustomObject]@{
-            Action  = $action
             Message = $auditMessage
             IsError = $true
         })
