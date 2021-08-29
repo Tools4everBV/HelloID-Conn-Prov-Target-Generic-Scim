@@ -17,6 +17,7 @@
 - [Getting help](#Getting-help)
 - [Contributing](#Contributing)
 - [HelloID Docs](#HelloID-Docs)
+- [Release history](#Release-history)
 
 ## Introduction
 
@@ -73,3 +74,12 @@ Find a bug or have an idea! Open an issue or submit a pull request!
 ## HelloID Docs
 
 The official HelloID documentation can be found at: https://docs.helloid.com/
+
+## Release history
+
+### Create/Update.ps1 (version: 1.0.0.3)
+
+- Create/Update both implement a 'Begin/Process/End' style.
+- Added 'Switch' statement to: _Create.ps1_ to accomodate a 'create' and 'correlate' action.
+- Improved errorHandling
+- Added inline documentation
