@@ -177,7 +177,7 @@ try {
         }
         $response = Invoke-RestMethod @splatParams
         if ($response.id){
-            $logMessage = "Account: $($aRef) for: $($p.DisplayName) successfully updated"
+            $logMessage = "Account: $aRef for: $($p.DisplayName) successfully updated"
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
@@ -204,9 +204,9 @@ try {
 # The 'End' block is where we gather the results and send them back to HelloID.
 } finally {
     $result = [PSCustomObject]@{
-        Success          = $success
-        Account          = $account
-        AuditDetails     = $auditMessage
+        Success      = $success
+        Account      = $account
+        AuditDetails = $auditMessage
     }
     Write-Output $result | ConvertTo-Json -Depth 10
 }
