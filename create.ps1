@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Create
 #
-# Version: 1.0.0.2
+# Version: 1.0.0.3
 #####################################################
 $VerbosePreference = "Continue"
 
@@ -24,18 +24,8 @@ $account = [PSCustomObject]@{
     IsEmailPrimary      = $true
 }
 
-#Region Helper Functions
+#region functions
 function Get-GenericScimOAuthToken {
-    <#
-    .SYNOPSIS
-    Retrieves the OAuth token from a SCIM API <http://www.simplecloud.info/>
-
-    .PARAMETER ClientID
-    The ClientID for the SCIM API
-
-    .PARAMETER ClientSecret
-    The ClientSecret for the SCIM API
-    #>
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -82,104 +72,125 @@ function Resolve-HTTPError {
         [object]$ErrorObject
     )
     process {
-        $HttpErrorObj = @{
+        $HttpErrorObj = [PSCustomObject]@{
             FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
             MyCommand             = $ErrorObject.InvocationInfo.MyCommand
             RequestUri            = $ErrorObject.TargetObject.RequestUri
+            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
+            ErrorMessage          = ''
         }
         if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') {
-            $HttpErrorObj['ErrorMessage'] = $ErrorObject.ErrorDetails.Message
+            $HttpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
         } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             $stream = $ErrorObject.Exception.Response.GetResponseStream()
             $stream.Position = 0
             $streamReader = New-Object System.IO.StreamReader $Stream
             $errorResponse = $StreamReader.ReadToEnd()
-            $HttpErrorObj['ErrorMessage'] = $errorResponse
+            $HttpErrorObj.ErrorMessage = $errorResponse
         }
-        Write-Output "'$($HttpErrorObj.ErrorMessage)', TargetObject: '$($HttpErrorObj.RequestUri), InvocationCommand: '$($HttpErrorObj.MyCommand)"
+        Write-Output $HttpErrorObj
     }
 }
-#EndRegion
+#endregion
 
-if (-not($dryRun -eq $true)) {
-    try {
-        Write-Verbose "Creating account for '$($p.DisplayName)'"
-        Write-Verbose 'Retrieving accessToken'
-        $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
+try {
+    # Begin
+    # This is our 'Begin' block. Similar to a 'PS Begin' block in a function. Here, we setup our connection,
+    # verify data (check if an account already exists),
+    # and determine which path in the 'dryRun' block to follow. Either, create or correlate.
+    Write-Verbose 'Retrieving accessToken'
+    $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
-        [System.Collections.Generic.List[object]]$roles = @()
-        [System.Collections.Generic.List[object]]$emailList = @()
-        $emailList.Add(
-            [PSCustomObject]@{
-                primary = $account.IsEmailPrimary
-                type    = $account.EmailAddressType
-                display = $account.EmailAddress
-                value   = $account.EmailAddress
+    Write-Verbose 'Adding Authorization headers'
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add("Authorization", "Bearer $accessToken")
+
+    # The 'action' variable determines which path to follow in the 'dryRun' using a switch statement.
+    # This is an array, because there might be a situation where you'd want to create and update a user.
+    # In that case you most likely want to loop through multiple switch statements.
+    $action = @("Create")
+
+    # Process
+    # The 'dryRun' block is similar to a 'Process' block. Here; we process our data,
+    # or, in this case; create or correlate the account.
+    if (-not ($dryRun -eq $true)){
+        switch ($action) {
+            'Create' {
+                Write-Verbose "Creating account for '$($p.DisplayName)'"
+
+                [System.Collections.Generic.List[object]]$emailList = @()
+                $emailList.Add(
+                    [PSCustomObject]@{
+                        primary = $account.IsEmailPrimary
+                        type    = $account.EmailAddressType
+                        display = $account.EmailAddress
+                        value   = $account.EmailAddress
+                    }
+                )
+
+                $body = [ordered]@{
+                    schemas    = @(
+                        "urn:ietf:params:scim:schemas:core:2.0:User",
+                        "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+                    )
+                    externalId = $account.ExternalID
+                    userName   = $account.UserName
+                    active     = $account.IsUserActive
+                    emails     = $emailList
+                    meta       = @{
+                        resourceType = "User"
+                    }
+                    name = [ordered]@{
+                        formatted        = $account.NameFormatted
+                        familyName       = $account.FamilyName
+                        familyNamePrefix = $account.FamilyNamePrefix
+                        givenName        = $account.GivenName
+                    }
+                } | ConvertTo-Json
+
+                $splatParams = @{
+                    Uri     = "$($config.BaseUrl)/scim/v2/Users"
+                    Headers = $headers
+                    Body    = $body
+                    Method  = 'POST'
+                }
+                $response = Invoke-RestMethod @splatParams
+                break
             }
-        )
 
-        $body = [ordered]@{
-            schemas    = @(
-                "urn:ietf:params:scim:schemas:core:2.0:User",
-                "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
-            )
-            externalId = $account.ExternalID
-            userName   = $account.UserName
-            active     = $account.IsUserActive
-            emails     = $emailList
-            meta       = @{
-                resourceType = "User"
+            # The 'Correlate' action is currently not being used in this demo connector
+            'Correlate'{
             }
-            name = [ordered]@{
-                formatted        = $account.NameFormatted
-                familyName       = $account.FamilyName
-                familyNamePrefix = $account.FamilyNamePrefix
-                givenName        = $account.GivenName
-            }
-            roles = $roles
-        } | ConvertTo-Json
-
-        Write-Verbose 'Adding Authorization headers'
-        $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-        $headers.Add("Authorization", "Bearer $accessToken")
-        $splatParams = @{
-            Uri               = "$($config.BaseUrl)/scim/v2/Users"
-            Headers           = $headers
-            Body              = $body
-            Method            = 'Post'
         }
 
-        $results = Invoke-RestMethod @splatParams
-        if ($results.id){
-            $logMessage = "Account for '$($p.DisplayName)' successfully created with id: '$($results.id)'"
-            Write-Verbose $logMessage
-            $success = $true
-            $auditLogs.Add([PSCustomObject]@{
-                Message = $logMessage
-                IsError = $False
-            })
-        }
-    } catch {
-        $ex = $PSItem
-        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account for '$($p.DisplayName)' not created. Error: $errorMessage"
-        } else {
-            $auditMessage = "Account for '$($p.DisplayName)' not created. Error: $($ex.Exception.Message)"
-        }
+        $success = $true
         $auditLogs.Add([PSCustomObject]@{
-            Message = $auditMessage
-            IsError = $true
+            Message = "$action account for: $($p.DisplayName) was successful. AccountReference is: $($response.Id)"
+            IsError = $False
         })
-        Write-Error $auditMessage
     }
+} catch {
+    $success = $false
+    $ex = $PSItem
+    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        $errorObj = Resolve-HTTPError -Error $ex
+        $errorMessage = "Could not create scim user. Error: $($errorObj.ErrorMessage)"
+    } else {
+        $errorMessage = "Could not create scim user. Error: $($ex.Exception.Message)"
+    }
+    Write-Error $errorMessage
+    $auditLogs.Add([PSCustomObject]@{
+        Message = "Could not create account for: $($p.DisplayName). Error: $errorMessage"
+        IsError = $true
+    })
+# End
+# The 'End' block is where we gather the results and send them back to HelloID.
+} Finally {
+    $result = [PSCustomObject]@{
+        Success          = $success
+        AccountReference = $response.Id
+        Auditlogs        = $auditLogs
+        Account          = $account
+    }
+    Write-Output $result | ConvertTo-Json -Depth 10
 }
-
-$result = [PSCustomObject]@{
-    Success          = $success
-    Account          = $account
-    AccountReference = $($results.id)
-    AuditLogs        = $auditLogs
-}
-
-Write-Output $result | ConvertTo-Json -Depth 10
