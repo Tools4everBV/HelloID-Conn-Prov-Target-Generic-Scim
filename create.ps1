@@ -174,13 +174,13 @@ try {
     $ex = $PSItem
     if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-HTTPError -Error $ex
-        $errorMessage = "Could not create scim user. Error: $($errorObj.ErrorMessage)"
+        $errorMessage = "Could not create scim account for: $($p.DisplayName). Error: $($errorObj.ErrorMessage)"
     } else {
-        $errorMessage = "Could not create scim user. Error: $($ex.Exception.Message)"
+        $errorMessage = "Could not create scim account for: $($p.DisplayName). Error: $($ex.Exception.Message)"
     }
     Write-Error $errorMessage
     $auditLogs.Add([PSCustomObject]@{
-        Message = "Could not create account for: $($p.DisplayName). Error: $errorMessage"
+        Message = $errorMessage
         IsError = $true
     })
 # End

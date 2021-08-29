@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Update
 #
-# Version: 1.0.0.2
+# Version: 1.0.0.3
 #####################################################
 $VerbosePreference = 'Continue'
 
@@ -25,18 +25,8 @@ $account = [PSCustomObject]@{
     IsEmailPrimary      = $true
 }
 
-#Region Helper Functions
+#region functions
 function Get-GenericScimOAuthToken {
-    <#
-    .SYNOPSIS
-    Retrieves the OAuth token from a SCIM API <http://www.simplecloud.info/>
-
-    .PARAMETER ClientID
-    The ClientID for the SCIM API
-
-    .PARAMETER ClientSecret
-    The ClientSecret for the SCIM API
-    #>
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -83,31 +73,43 @@ function Resolve-HTTPError {
         [object]$ErrorObject
     )
     process {
-        $HttpErrorObj = @{
+        $HttpErrorObj = [PSCustomObject]@{
             FullyQualifiedErrorId = $ErrorObject.FullyQualifiedErrorId
             MyCommand             = $ErrorObject.InvocationInfo.MyCommand
             RequestUri            = $ErrorObject.TargetObject.RequestUri
+            ScriptStackTrace      = $ErrorObject.ScriptStackTrace
+            ErrorMessage          = ''
         }
         if ($ErrorObject.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') {
-            $HttpErrorObj['ErrorMessage'] = $ErrorObject.ErrorDetails.Message
+            $HttpErrorObj.ErrorMessage = $ErrorObject.ErrorDetails.Message
         } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             $stream = $ErrorObject.Exception.Response.GetResponseStream()
             $stream.Position = 0
             $streamReader = New-Object System.IO.StreamReader $Stream
             $errorResponse = $StreamReader.ReadToEnd()
-            $HttpErrorObj['ErrorMessage'] = $errorResponse
+            $HttpErrorObj.ErrorMessage = $errorResponse
         }
-        Write-Output "'$($HttpErrorObj.ErrorMessage)', TargetObject: '$($HttpErrorObj.RequestUri), InvocationCommand: '$($HttpErrorObj.MyCommand)"
+        Write-Output $HttpErrorObj
     }
 }
-#EndRegion
+#endregion
 
-if (-not($dryRun -eq $true)) {
-    try {
-        Write-Verbose "Updating account '$($aRef)' for '$($p.DisplayName)'"
-        Write-Verbose 'Retrieving accessToken'
-        $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
+try {
+    # Begin
+    # This is our 'Begin' block. Similar to a 'PS Begin' block in a function. Here, we setup our connection,
+    # verify data (check if an account already exists),
+    # and determine which path in the 'dryRun' block to follow. Either, create or correlate.
+    Write-Verbose 'Retrieving accessToken'
+    $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
+    Write-Verbose 'Adding Authorization headers'
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add("Authorization", "Bearer $accessToken")
+
+    # Process
+    # The 'dryRun' block is similar to a 'Process' block. Here; we process our data,
+    # or, in this case; update the account.
+    if (-not($dryRun -eq $true)) {
         [System.Collections.Generic.List[object]]$operations = @()
 
         if ($account.ExternalId){
@@ -167,18 +169,15 @@ if (-not($dryRun -eq $true)) {
             Operations = $operations
         } | ConvertTo-Json
 
-        Write-Verbose 'Adding Authorization headers'
-        $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-        $headers.Add("Authorization", "Bearer $accessToken")
         $splatParams = @{
-            Uri               = "$($config.BaseUrl)/scim/v2/Users/$aRef"
-            Headers           = $headers
-            Body              = $body
-            Method            = 'Patch'
+            Uri     = "$($config.BaseUrl)/scim/v2/Users/$aRef"
+            Headers = $headers
+            Body    = $body
+            Method  = 'PATCH'
         }
-        $results = Invoke-RestMethod @splatParams
-        if ($results.id){
-            $logMessage = "Account '$($aRef) for '$($p.DisplayName)' successfully updated"
+        $response = Invoke-RestMethod @splatParams
+        if ($response.id){
+            $logMessage = "Account: $($aRef) for: $($p.DisplayName) successfully updated"
             Write-Verbose $logMessage
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
@@ -186,26 +185,28 @@ if (-not($dryRun -eq $true)) {
                 IsError = $False
             })
         }
-    } catch {
-        $ex = $PSItem
-        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-            $errorMessage = Resolve-HTTPError -Error $ex
-            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not updated. Error: $errorMessage"
-        } else {
-            $auditMessage = "Account '$($aRef)' for '$($p.DisplayName)' not updated. Error: $($ex.Exception.Message)"
-        }
-        $auditLogs.Add([PSCustomObject]@{
-                Message = $auditMessage
-                IsError = $true
-            })
-        Write-Error $auditMessage
     }
+} catch {
+    $success = $false
+    $ex = $PSItem
+    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+        $errorObj = Resolve-HTTPError -Error $ex
+        $errorMessage = "Could not update account: $aRef for: $($p.DisplayName). Error: $($errorObj.ErrorMessage)"
+    } else {
+        $errorMessage = "Could not update account: $aRef for: $($p.DisplayName). Error: $($ex.Exception.Message)"
+    }
+    Write-Error $errorMessage
+    $auditLogs.Add([PSCustomObject]@{
+        Message = $errorMessage
+        IsError = $true
+    })
+# End
+# The 'End' block is where we gather the results and send them back to HelloID.
+} finally {
+    $result = [PSCustomObject]@{
+        Success          = $success
+        Account          = $account
+        AuditDetails     = $auditMessage
+    }
+    Write-Output $result | ConvertTo-Json -Depth 10
 }
-
-$result = [PSCustomObject]@{
-    Success          = $success
-    Account          = $account
-    AuditDetails     = $auditMessage
-}
-
-Write-Output $result | ConvertTo-Json -Depth 10
