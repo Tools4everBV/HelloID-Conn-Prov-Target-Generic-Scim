@@ -26,14 +26,14 @@ $account = [PSCustomObject]@{
 }
 
 #region functions
-function Get-GenericScimOAuthToken {
+function Get-ScimOAuthToken {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory)]
         [string]
         $ClientID,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory)]
         [string]
         $ClientSecret
     )
@@ -50,16 +50,9 @@ function Get-GenericScimOAuthToken {
             grant_type    = "client_credentials"
         }
 
-        $splatRestMethodParameters = @{
-            Uri     = $TokenUri
-            Method  = 'POST'
-            Headers = $headers
-            Body    = $body
-        }
-        Invoke-RestMethod @splatRestMethodParameters
+        Invoke-RestMethod -Uri 'https://login.salesforce.com/services/oauth2/token' -Method 'POST' -Body $body -Headers $headers
         Write-Verbose 'Finished retrieving accessToken'
-    }
-    catch {
+    } catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
     }
 }
@@ -96,19 +89,14 @@ function Resolve-HTTPError {
 
 try {
     # Begin
-    # This is our 'Begin' block. Similar to a 'PS Begin' block in a function. Here, we setup our connection,
-    # verify data (check if an account already exists),
-    # and determine which path in the 'dryRun' block to follow. Either, create or correlate.
     Write-Verbose 'Retrieving accessToken'
-    $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
+    $accessToken = Get-ScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
     Write-Verbose 'Adding Authorization headers'
     $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
     $headers.Add("Authorization", "Bearer $accessToken")
 
     # Process
-    # The 'dryRun' block is similar to a 'Process' block. Here; we process our data,
-    # or, in this case; update the account.
     if (-not($dryRun -eq $true)) {
         [System.Collections.Generic.List[object]]$operations = @()
 
@@ -201,7 +189,6 @@ try {
         IsError = $true
     })
 # End
-# The 'End' block is where we gather the results and send them back to HelloID.
 } finally {
     $result = [PSCustomObject]@{
         Success      = $success
