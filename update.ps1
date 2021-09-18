@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Update
 #
-# Version: 1.0.0.3
+# Version: 1.0.0.2
 #####################################################
 $VerbosePreference = 'Continue'
 
@@ -25,7 +25,7 @@ $account = [PSCustomObject]@{
     IsEmailPrimary      = $true
 }
 
-#region functions
+#region Helper Functions
 function Get-ScimOAuthToken {
     [CmdletBinding()]
     param (
@@ -49,8 +49,7 @@ function Get-ScimOAuthToken {
             client_secret = $ClientSecret
             grant_type    = "client_credentials"
         }
-
-        Invoke-RestMethod -Uri 'https://login.salesforce.com/services/oauth2/token' -Method 'POST' -Body $body -Headers $headers
+        Invoke-RestMethod -Uri $Uri -Method 'POST' -Body $body -Headers $headers
         Write-Verbose 'Finished retrieving accessToken'
     } catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
@@ -87,17 +86,12 @@ function Resolve-HTTPError {
 }
 #endregion
 
-try {
-    # Begin
-    Write-Verbose 'Retrieving accessToken'
-    $accessToken = Get-ScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
+if (-not($dryRun -eq $true)) {
+    try {
+        Write-Verbose "Updating account '$($aRef)' for '$($p.DisplayName)'"
+        Write-Verbose 'Retrieving accessToken'
+        $accessToken = Get-ScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
-    Write-Verbose 'Adding Authorization headers'
-    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-    $headers.Add("Authorization", "Bearer $accessToken")
-
-    # Process
-    if (-not($dryRun -eq $true)) {
         [System.Collections.Generic.List[object]]$operations = @()
 
         if ($account.ExternalId){
@@ -157,43 +151,43 @@ try {
             Operations = $operations
         } | ConvertTo-Json
 
+        Write-Verbose 'Adding Authorization headers'
+        $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+        $headers.Add("Authorization", "Bearer $accessToken")
         $splatParams = @{
-            Uri     = "$($config.BaseUrl)/scim/v2/Users/$aRef"
+            Uri     = "$($config.BaseUrl)/Users/$aRef"
             Headers = $headers
             Body    = $body
-            Method  = 'PATCH'
+            Method  = 'Patch'
         }
-        $response = Invoke-RestMethod @splatParams
-        if ($response.id){
-            $logMessage = "Account: $aRef for: $($p.DisplayName) successfully updated"
-            Write-Verbose $logMessage
+        $results = Invoke-RestMethod @splatParams
+        if ($results.id){
             $success = $true
             $auditLogs.Add([PSCustomObject]@{
-                Message = $logMessage
+                Message = "Update account for: $($p.DisplayName) was successful."
                 IsError = $False
             })
         }
+    } catch {
+        $success = $false
+        $ex = $PSItem
+        if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
+            $errorObj = Resolve-HTTPError -Error $ex
+            $errorMessage = "Could not update scim account for: $($p.DisplayName). Error: $($errorObj.ErrorMessage)"
+        } else {
+            $errorMessage = "Could not update scim account for: $($p.DisplayName). Error: $($ex.Exception.Message)"
+        }
+        Write-Error $errorMessage
+        $auditLogs.Add([PSCustomObject]@{
+            Message = $errorMessage
+            IsError = $true
+        })
+    } finally {
+        $result = [PSCustomObject]@{
+            Success          = $success
+            Account          = $account
+            AuditDetails     = $auditMessage
+        }
+        Write-Output $result | ConvertTo-Json -Depth 10
     }
-} catch {
-    $success = $false
-    $ex = $PSItem
-    if ( $($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-        $errorObj = Resolve-HTTPError -Error $ex
-        $errorMessage = "Could not update account: $aRef for: $($p.DisplayName). Error: $($errorObj.ErrorMessage)"
-    } else {
-        $errorMessage = "Could not update account: $aRef for: $($p.DisplayName). Error: $($ex.Exception.Message)"
-    }
-    Write-Error $errorMessage
-    $auditLogs.Add([PSCustomObject]@{
-        Message = $errorMessage
-        IsError = $true
-    })
-# End
-} finally {
-    $result = [PSCustomObject]@{
-        Success      = $success
-        Account      = $account
-        AuditDetails = $auditMessage
-    }
-    Write-Output $result | ConvertTo-Json -Depth 10
 }
