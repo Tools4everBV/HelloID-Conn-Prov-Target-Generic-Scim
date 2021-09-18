@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Generic-Scim-Create
 #
-# Version: 1.0.0.3
+# Version: 1.0.0.4
 #####################################################
 $VerbosePreference = "Continue"
 
@@ -25,14 +25,14 @@ $account = [PSCustomObject]@{
 }
 
 #region functions
-function Get-GenericScimOAuthToken {
+function Get-ScimOAuthToken {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory)]
         [string]
         $ClientID,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory)]
         [string]
         $ClientSecret
     )
@@ -49,17 +49,100 @@ function Get-GenericScimOAuthToken {
             grant_type    = "client_credentials"
         }
 
-        $splatRestMethodParameters = @{
-            Uri     = $TokenUri
-            Method  = 'POST'
-            Headers = $headers
-            Body    = $body
-        }
-        Invoke-RestMethod @splatRestMethodParameters
+        Invoke-RestMethod -Uri $Uri -Method 'POST' -Body $body -Headers $headers
         Write-Verbose 'Finished retrieving accessToken'
     }
     catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
+    }
+}
+
+function Invoke-ScimRestMethod {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [Microsoft.PowerShell.Commands.WebRequestMethod]
+        $Method,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Uri,
+
+        [object]
+        $Body,
+
+        [string]
+        $ContentType = 'application/json',
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]
+        $Headers
+    )
+
+    try {
+        Write-Verbose "Invoking command '$($MyInvocation.MyCommand)'"
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+
+        $splatParams = @{
+            Uri         = "$($config.BaseUrl)/$Uri"
+            Headers     = $Headers
+            Method      = $Method
+            ContentType = $ContentType
+        }
+
+        if ($Body){
+            Write-Verbose 'Adding body to request'
+            $splatParams['Body'] = $Body
+        }
+
+        Invoke-RestMethod @splatParams
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
+function Invoke-ScimPagedRestMethod {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.List[object]])]
+    param (
+        [int]
+        $TotalResults,
+
+        [String]
+        $EndPoint,
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]
+        $Headers
+    )
+
+    # Fixed value since each page contains 20 items max
+    $count = 20
+
+    try {
+        Write-Verbose "Invoking command '$($MyInvocation.MyCommand)'"
+
+        [System.Collections.Generic.List[object]]$dataList = @()
+        if ($TotalResults -gt $count){
+            Write-Verbose 'Using pagination to retrieve results'
+            do {
+                $startIndex = $dataList.Count
+                $splatPagedWebRequest = @{
+                    Uri     = "$($EndPoint)?startIndex=$startIndex&count=$count"
+                    Method  = 'GET'
+                    Headers = $Headers
+                }
+                $result = Invoke-ScimRestMethod @splatPagedWebRequest
+                foreach ($resource in $result.Resources){
+                    $dataList.Add($resource)
+                }
+            } until ($dataList.Count -eq $totalResults)
+        }
+        Write-Output $dataList
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
     }
 }
 
@@ -95,24 +178,36 @@ function Resolve-HTTPError {
 
 try {
     # Begin
-    # This is our 'Begin' block. Similar to a 'PS Begin' block in a function. Here, we setup our connection,
-    # verify data (check if an account already exists),
-    # and determine which path in the 'dryRun' block to follow. Either, create or correlate.
     Write-Verbose 'Retrieving accessToken'
     $accessToken = Get-GenericScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
-    Write-Verbose 'Adding Authorization headers'
+    Write-Verbose 'Adding token to authorization headers'
     $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
     $headers.Add("Authorization", "Bearer $accessToken")
 
-    # The 'action' variable determines which path to follow in the 'dryRun' using a switch statement.
-    # This is an array, because there might be a situation where you'd want to create and update a user.
-    # In that case you most likely want to loop through multiple switch statements.
-    $action = @("Create")
+    Write-Verbose 'Getting total number of users'
+    $response = Invoke-ScimRestMethod -Uri 'Users' -Method 'GET' -headers $headers
+    $totalResults = $response.totalResults
+
+    Write-Verbose "Retrieving '$totalResults' users"
+    if ($totalResults -gt 20){
+        $responseAllUsers = Invoke-ScimPagedRestMethod -TotalResults $totalResults -EndPoint 'Users' -Headers $headers
+    } else {
+        $responseAllUsers = Invoke-ScimRestMethod -Uri 'Users' -Method 'GET' -headers $headers
+    }
+
+    Write-Verbose "Verifying if account for '$($p.DisplayName)' must be created or correlated"
+    $lookup = $responseAllUsers.Resources | Group-Object -Property 'ExternalId' -AsHashTable
+    $userObject = $lookup[$account.ExternalId]
+    if ($userObject){
+        Write-Verbose "Account for '$($account.DisplayName)' found with id '$($userObject.id)', switching to 'correlate'"
+        $action = 'Correlate'
+    } else {
+        Write-Verbose "No account for '$($account.DisplayName)' has been found, switching to 'create'"
+        $action = 'Create'
+    }
 
     # Process
-    # The 'dryRun' block is similar to a 'Process' block. Here; we process our data,
-    # or, in this case; create or correlate the account.
     if (-not ($dryRun -eq $true)){
         switch ($action) {
             'Create' {
@@ -147,25 +242,20 @@ try {
                         givenName        = $account.GivenName
                     }
                 } | ConvertTo-Json
-
-                $splatParams = @{
-                    Uri     = "$($config.BaseUrl)/scim/v2/Users"
-                    Headers = $headers
-                    Body    = $body
-                    Method  = 'POST'
-                }
-                $response = Invoke-RestMethod @splatParams
+                $response = Invoke-ScimRestMethod -Uri 'Users' -Method 'POST' -body $body -headers $headers
+                $accountReference = $response.id
                 break
             }
 
-            # The 'Correlate' action is currently not being used in this demo connector
             'Correlate'{
+                Write-Verbose "Correlating account for '$($p.DisplayName)'"
+                $accountReference = $userObject.id
             }
         }
 
         $success = $true
         $auditLogs.Add([PSCustomObject]@{
-            Message = "$action account for: $($p.DisplayName) was successful. AccountReference is: $($response.Id)"
+            Message = "$action account for: $($p.DisplayName) was successful. AccountReference is: $accountReference"
             IsError = $False
         })
     }
@@ -184,11 +274,10 @@ try {
         IsError = $true
     })
 # End
-# The 'End' block is where we gather the results and send them back to HelloID.
 } Finally {
     $result = [PSCustomObject]@{
         Success          = $success
-        AccountReference = $response.Id
+        AccountReference = $accountReference
         Auditlogs        = $auditLogs
         Account          = $account
     }
