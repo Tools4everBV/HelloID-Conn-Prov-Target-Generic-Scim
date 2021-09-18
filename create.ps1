@@ -250,6 +250,7 @@ try {
             'Correlate'{
                 Write-Verbose "Correlating account for '$($p.DisplayName)'"
                 $accountReference = $userObject.id
+                break
             }
         }
 
