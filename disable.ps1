@@ -7,7 +7,7 @@ $VerbosePreference = 'Continue'
 
 # Initialize default value's
 $config = $configuration | ConvertFrom-Json
-$personObj = $person | ConvertFrom-Json
+$p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $success = $false
 $auditLogs = New-Object Collections.Generic.List[PSCustomObject]
@@ -75,7 +75,7 @@ function Resolve-HTTPError {
 
 if (-not($dryRun -eq $true)) {
     try {
-        Write-Verbose "Disabling account '$($aRef)' for '$($personObj.DisplayName)'"
+        Write-Verbose "Disabling account '$($aRef)' for '$($p.DisplayName)'"
         Write-Verbose "Retrieving accessToken"
         $accessToken = Get-ScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
