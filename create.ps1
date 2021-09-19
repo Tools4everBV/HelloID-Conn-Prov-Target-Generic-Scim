@@ -78,15 +78,19 @@ function Invoke-ScimRestMethod {
 
         [Parameter(Mandatory)]
         [System.Collections.IDictionary]
-        $Headers
+        $Headers,
+
+        [string]
+        $TotalResults
     )
 
     try {
         Write-Verbose "Invoking command '$($MyInvocation.MyCommand)'"
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
+        $baseUrl = $($config.BaseUrl)
         $splatParams = @{
-            Uri         = "$($config.BaseUrl)/$Uri"
+            Uri         = "$baseUrl/$Uri"
             Headers     = $Headers
             Method      = $Method
             ContentType = $ContentType
@@ -97,50 +101,24 @@ function Invoke-ScimRestMethod {
             $splatParams['Body'] = $Body
         }
 
-        Invoke-RestMethod @splatParams
-    } catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
+        if ($TotalResults){
+            # Fixed value since each page contains 20 items max
+            $count = 20
 
-function Invoke-ScimPagedRestMethod {
-    [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[object]])]
-    param (
-        [int]
-        $TotalResults,
-
-        [String]
-        $EndPoint,
-
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]
-        $Headers
-    )
-
-    # Fixed value since each page contains 20 items max
-    $count = 20
-
-    try {
-        Write-Verbose "Invoking command '$($MyInvocation.MyCommand)'"
-
-        [System.Collections.Generic.List[object]]$dataList = @()
-        if ($TotalResults -gt $count){
+            [System.Collections.Generic.List[object]]$dataList = @()
             Write-Verbose 'Using pagination to retrieve results'
             do {
                 $startIndex = $dataList.Count
-                $splatPagedWebRequest = @{
-                    Uri     = "$($EndPoint)?startIndex=$startIndex&count=$count"
-                    Method  = 'GET'
-                    Headers = $Headers
-                }
-                $result = Invoke-ScimRestMethod @splatPagedWebRequest
+                $splatParams['Uri'] = "$($baseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
+                $result = Invoke-RestMethod @splatParams
                 foreach ($resource in $result.Resources){
                     $dataList.Add($resource)
                 }
-            } until ($dataList.Count -eq $totalResults)
+            } until ($dataList.Count -eq $TotalResults)
+            Write-Output $dataList
+        } else {
+            Invoke-RestMethod @splatParams
         }
-        Write-Output $dataList
     } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
@@ -177,7 +155,7 @@ function Resolve-HTTPError {
 #endregion
 
 try {
-    # Begin
+    Begin
     Write-Verbose 'Retrieving accessToken'
     $accessToken = Get-ScimOAuthToken -ClientID $($config.ClientID) -ClientSecret $($config.ClientSecret)
 
@@ -190,14 +168,10 @@ try {
     $totalResults = $response.totalResults
 
     Write-Verbose "Retrieving '$totalResults' users"
-    if ($totalResults -gt 20){
-        $responseAllUsers = Invoke-ScimPagedRestMethod -TotalResults $totalResults -EndPoint 'Users' -Headers $headers
-    } else {
-        $responseAllUsers = Invoke-ScimRestMethod -Uri 'Users' -Method 'GET' -headers $headers
-    }
+    $responseAllUsers = Invoke-ScimRestMethod -Uri 'Users' -Method 'GET' -headers $headers -TotalResults $totalResults
 
     Write-Verbose "Verifying if account for '$($p.DisplayName)' must be created or correlated"
-    $lookup = $responseAllUsers.Resources | Group-Object -Property 'ExternalId' -AsHashTable
+    $lookup = $responseAllUsers | Group-Object -Property 'ExternalId' -AsHashTable
     $userObject = $lookup[$account.ExternalId]
     if ($userObject){
         Write-Verbose "Account for '$($p.DisplayName)' found with id '$($userObject.id)', switching to 'correlate'"
@@ -205,6 +179,11 @@ try {
     } else {
         Write-Verbose "No account for '$($p.DisplayName)' has been found, switching to 'create'"
         $action = 'Create'
+    }
+
+    # Add an auditMessage showing what will happen during enforcement
+    if ($dryRun){
+        $auditMessage = "$action account for: $($p.DisplayName) will be executed during enforcement"
     }
 
     # Process
@@ -280,6 +259,7 @@ try {
         Success          = $success
         AccountReference = $accountReference
         Auditlogs        = $auditLogs
+        AuditDetails     = $auditMessage
         Account          = $account
     }
     Write-Output $result | ConvertTo-Json -Depth 10
