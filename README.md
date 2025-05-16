@@ -10,18 +10,20 @@
 
 ## Table of contents
 
-- [Introduction](#Introduction)
-- [Getting started](#Getting-started)
-  + [Connection settings](#Connection-settings)
-  + [Prerequisites](#Prerequisites)
-  + [Contents](#Contents)
-  + [PowerShell functions](#PowerShell-functions)
-  + [Supported PowerShell versions](#Supported-PowerShell-versions)
-- [Setup the connector](#Setup-the-connector)
-- [Getting help](#Getting-help)
-- [Contributing](#Contributing)
-- [HelloID Docs](#HelloID-Docs)
-- [Release history](#Release-history)
+- [HelloID-Conn-Prov-Target-Generic-Scim](#helloid-conn-prov-target-generic-scim)
+  - [Table of contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Getting started](#getting-started)
+    - [Connection settings](#connection-settings)
+    - [Prerequisites](#prerequisites)
+    - [Supported PowerShell versions](#supported-powershell-versions)
+  - [Remarks](#remarks)
+  - [Setup the connector](#setup-the-connector)
+  - [Getting help](#getting-help)
+  - [Contributing](#contributing)
+  - [HelloID Docs](#helloid-docs)
+  - [Release history](#release-history)
+    - [Create/Update.ps1 (version: 1.0.0.3)](#createupdateps1-version-1003)
 
 ## Introduction
 
@@ -48,6 +50,11 @@ The _'HelloID-Conn-Prov-Target-Generic-Scim'_ connector is a working example tar
 The connector is created for both Windows PowerShell 5.1 and PowerShell Core. This means that the connector can be executed in both cloud and on-premises using the HelloID Agent.
 
 > Older versions of Windows PowerShell are not supported.
+
+## Remarks
+- There is duplicate mapping logic in both the *create* and *update*. If you modify the field mapping, be sure to update both files accordingly.
+- In the *create* operation, all users are currently retrieved. In many cases, this can be optimized using a filter.  
+  If filtering is not possible and fetching all users takes too long, consider moving this logic to a resource script.
 
 ## Setup the connector
 
