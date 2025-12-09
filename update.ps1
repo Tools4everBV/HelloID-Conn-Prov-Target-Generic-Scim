@@ -16,7 +16,11 @@ function Get-ScimOAuthToken {
 
         [Parameter(Mandatory)]
         [string]
-        $ClientSecret
+        $ClientSecret,
+
+        [Parameter(Mandatory)]
+        [string]
+        $TokenUri
     )
 
     try {
@@ -27,77 +31,17 @@ function Get-ScimOAuthToken {
         $body = @{
             client_id     = $ClientID
             client_secret = $ClientSecret
+            scope         = 'scim'
             grant_type    = 'client_credentials'
         }
 
-        Invoke-RestMethod -Uri $Uri -Method 'POST' -Body $body -Headers $headers
+        Invoke-RestMethod -Uri $TokenUri -Method 'POST' -Body $body -Headers $headers
     } catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
     }
 }
 
-function Invoke-ScimRestMethod {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [Microsoft.PowerShell.Commands.WebRequestMethod]
-        $Method,
-
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $Uri,
-
-        [object]
-        $Body,
-
-        [string]
-        $ContentType = 'application/json',
-
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]
-        $Headers,
-
-        [string]
-        $TotalResults
-    )
-
-    try {
-        $splatParams = @{
-            Uri         = "$($actionContext.configuration.BaseUrl)/$Uri"
-            Headers     = $Headers
-            Method      = $Method
-            ContentType = $ContentType
-        }
-
-        if ($Body) {
-            $splatParams['Body'] = $Body
-        }
-
-        if ($TotalResults) {
-            # Fixed value since each page contains 20 items max
-            $count = 20
-
-            [System.Collections.Generic.List[object]]$dataList = @()
-            do {
-                $startIndex = $dataList.Count
-                $splatParams['Uri'] = "$($baseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
-                $result = Invoke-RestMethod @splatParams
-                foreach ($resource in $result.Resources) {
-                    $dataList.Add($resource)
-                }
-            } until ($dataList.Count -eq $TotalResults)
-            Write-Output $dataList
-        } else {
-            Invoke-RestMethod @splatParams
-        }
-    } catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
-
-function Resolve-HTTPError {
+function Resolve-Generic-ScimError {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)]
@@ -130,6 +74,36 @@ function Resolve-HTTPError {
         Write-Output $httpErrorObj
     }
 }
+
+function ConvertTo-HelloIDAccountObject {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [object]
+        $AccountObject
+    )
+    process {
+
+        # Making sure only fieldMapping fields are imported
+        $helloidAccountObject = [PSCustomObject]@{} 
+        foreach ($property in $actionContext.Data.PSObject.Properties) {
+            switch($property.Name){
+                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}                  
+                'IsEmailPrimary'        { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue "$($AccountObject.emails.primary)"}
+                'EmailAddressType'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.type}
+                'Username'              { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.userName}
+                'ExternalId'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.externalId}
+                'GivenName'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.givenName}
+                'NameFormatted'         { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.formatted}
+                'FamilyName'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyName}
+                'FamilyNamePrifix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
+                'IsEnabled'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.active}
+                default                 { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.$($property.Name)}
+            } 
+        }
+        Write-Output $helloidAccountObject
+    }
+}
 #endregion
 
 try {
@@ -138,32 +112,26 @@ try {
         throw 'The account reference could not be found'
     }
 
-    $accessToken = Get-ScimOAuthToken -ClientID $($actionContext.configuration.ClientID) -ClientSecret $($actionContext.configuration.ClientSecret)
+    $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
-    $headers.Add('Authorization', "Bearer $accessToken")
+    $headers.Add('Authorization', "$($accessToken.token_type) $($accessToken.access_token)")
+    $headers.Add('Accept', 'application/json')
 
     Write-Information 'Verifying if a Scim account exists'
     $splatGetUser = @{
-        Uri     = "Users/$($actionContext.References.Account)"
+        Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
         Method  = 'GET'
         Headers = $headers
+        ContentType = 'application/json'
     }
-    $correlatedAccount = Invoke-ScimRestMethod @splatGetUser
-    $outputContext.PreviousData = $correlatedAccount
+    $correlatedAccount = Invoke-RestMethod @splatGetUser  
 
     # Always compare the account against the current account in target system
     if ($null -ne $correlatedAccount) {
-        $targetAccount = [PSCustomObject]@{
-            EmailAddress        = $correlatedAccount.emails.value
-            IsEmailPrimary      = "$($correlatedAccount.emails.primary)"
-            EmailAddressType    = $correlatedAccount.emails.type
-            Username            = $correlatedAccount.userName
-            ExternalId          = $correlatedAccount.externalId
-            GivenName           = $correlatedAccount.name.givenName
-            NameFormatted       = $correlatedAccount.name.formatted
-            FamilyName          = $correlatedAccount.name.familyName
-            FamilyNameFormatted = $correlatedAccount.name.familyNamePrefix
-        }
+
+        $targetAccount = ConvertTo-HelloIDAccountObject($correlatedAccount)        
+
+        $outputContext.PreviousData = $targetAccount
 
         $splatCompareProperties = @{
             ReferenceObject  = @($targetAccount.PSObject.Properties)
@@ -218,7 +186,7 @@ try {
                         $operations.Add(
                             [PSCustomObject]@{
                                 op    = 'Replace'
-                                path  = 'name.NameFormatted'
+                                path  = 'name.Formatted'
                                 value = $property.Value
                             }
                         )
@@ -232,11 +200,11 @@ try {
                             }
                         )
                     }
-                    'FamilyNameFormatted' {
+                    'FamilyNamePrefix' {
                         $operations.Add(
                             [PSCustomObject]@{
                                 op    = 'Replace'
-                                path  = 'name.FamilyNameFormatted'
+                                path  = 'name.FamilyNamePrefix'
                                 value = $property.Value
                             }
                         )
@@ -278,17 +246,18 @@ try {
                 Operations = $operations
             } | ConvertTo-Json
 
-            $splatParams = @{
-                Uri     = "Users/$($actionContext.References.Account)"
+            $splatUpdateUser = @{
+                Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
                 Headers = $headers
                 Body    = $body
                 Method  = 'Patch'
+                ContentType = 'application/json'
             }
 
             # Make sure to test with special characters and if needed; add utf8 encoding.
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information "Updating Scim account with accountReference: [$($actionContext.References.Account)]"
-                $results = Invoke-ScimRestMethod @splatParams
+                $results = Invoke-RestMethod @splatUpdateUser
                 if (-not($results.id)) {
                     throw
                 }
@@ -330,11 +299,11 @@ try {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-        $errorObj = Resolve-HTTPError -Error $ex
-        $auditMessage = "Could not update Scim account for: $($actionContext.Data.DisplayName). Error: $($errorObj.FriendlyMessage)"
+        $errorObj = Resolve-Generic-ScimError -Error $ex
+        $auditMessage = "Could not update Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not update Scim account for: $($actionContext.Data.DisplayName). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not update Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{

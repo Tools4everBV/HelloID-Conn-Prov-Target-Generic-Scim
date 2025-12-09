@@ -25,7 +25,18 @@
     "defaultValue": "",
     "templateOptions": {
       "label": "BaseUrl",
-      "description": "The URL to the application",
+      "description": "The URL to the root SCIM endpoint",
+      "placeholder": "",
+      "required": true
+    }
+  },
+  {
+    "key": "TokenUrl",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "TokenUrl",
+      "description": "The URL to the token generation endpoint",
       "placeholder": "",
       "required": true
     }

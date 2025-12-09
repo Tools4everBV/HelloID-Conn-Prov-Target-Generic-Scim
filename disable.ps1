@@ -16,7 +16,11 @@ function Get-ScimOAuthToken {
 
         [Parameter(Mandatory)]
         [string]
-        $ClientSecret
+        $ClientSecret,
+
+        [Parameter(Mandatory)]
+        [string]
+        $TokenUri
     )
 
     try {
@@ -27,77 +31,17 @@ function Get-ScimOAuthToken {
         $body = @{
             client_id     = $ClientID
             client_secret = $ClientSecret
+            scope         = 'scim'
             grant_type    = 'client_credentials'
         }
 
-        Invoke-RestMethod -Uri $Uri -Method 'POST' -Body $body -Headers $headers
+        Invoke-RestMethod -Uri $TokenUri -Method 'POST' -Body $body -Headers $headers
     } catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
     }
 }
 
-function Invoke-ScimRestMethod {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [Microsoft.PowerShell.Commands.WebRequestMethod]
-        $Method,
-
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]
-        $Uri,
-
-        [object]
-        $Body,
-
-        [string]
-        $ContentType = 'application/json',
-
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]
-        $Headers,
-
-        [string]
-        $TotalResults
-    )
-
-    try {
-        $splatParams = @{
-            Uri         = "$($actionContext.configuration.BaseUrl)/$Uri"
-            Headers     = $Headers
-            Method      = $Method
-            ContentType = $ContentType
-        }
-
-        if ($Body) {
-            $splatParams['Body'] = $Body
-        }
-
-        if ($TotalResults) {
-            # Fixed value since each page contains 20 items max
-            $count = 20
-
-            [System.Collections.Generic.List[object]]$dataList = @()
-            do {
-                $startIndex = $dataList.Count
-                $splatParams['Uri'] = "$($baseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
-                $result = Invoke-RestMethod @splatParams
-                foreach ($resource in $result.Resources) {
-                    $dataList.Add($resource)
-                }
-            } until ($dataList.Count -eq $TotalResults)
-            Write-Output $dataList
-        } else {
-            Invoke-RestMethod @splatParams
-        }
-    } catch {
-        $PSCmdlet.ThrowTerminatingError($_)
-    }
-}
-
-function Resolve-HTTPError {
+function Resolve-Generic-ScimError {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)]
@@ -138,17 +82,18 @@ try {
         throw 'The account reference could not be found'
     }
 
-    $accessToken = Get-ScimOAuthToken -ClientID $($actionContext.configuration.ClientID) -ClientSecret $($actionContext.configuration.ClientSecret)
-    $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
-    $headers.Add('Authorization', "Bearer $accessToken")
+   $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl
+   $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
+   $headers.Add('Authorization', "$($accessToken.token_type) $($accessToken.access_token)")
 
     Write-Information 'Verifying if a Scim account exists'
     $splatGetUser = @{
-        Uri     = "Users/$($actionContext.References.Account)"
+        Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
         Method  = 'GET'
         Headers = $headers
+        ContentType = 'application/json'
     }
-    $correlatedAccount = Invoke-ScimRestMethod @splatGetUser
+    $correlatedAccount = Invoke-RestMethod @splatGetUser
 
     if ($null -ne $correlatedAccount) {
         $action = 'DisableAccount'
@@ -176,15 +121,16 @@ try {
             } | ConvertTo-Json
 
             $splatParams = @{
-                Uri     = "Users/$($actionContext.References.Account)"
+                Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
                 Headers = $headers
                 Body    = $body
                 Method  = 'Patch'
+                ContentType = 'application/json'            
             }
 
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information "Disabling Scim account with accountReference: [$($actionContext.References.Account)]"
-                $results = Invoke-ScimRestMethod @splatParams
+                $results = Invoke-RestMethod @splatParams
                 if (-not($results.id)) {
                     throw
                 }
@@ -195,17 +141,17 @@ try {
 
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Message = 'Disable account was successful'
+                    Message = "Disable account [$($actionContext.References.Account)] was successful. Action initiated by: [$($actionContext.Origin)]"
                     IsError = $false
                 })
             break
         }
 
         'NotFound' {
-            Write-Information "Scim account: [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
+            Write-Information "Scim account: [$($actionContext.References.Account)] could not be found, indicating that it may have been deleted"
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Message = "Scim account: [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
+                    Message = "Scim account: [$($actionContext.References.Account)] could not be found, indicating that it may have been deleted. Action initiated by: [$($actionContext.Origin)]"
                     IsError = $false
                 })
             break
@@ -216,11 +162,11 @@ try {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-        $errorObj = Resolve-HTTPError -Error $ex
-        $auditMessage = "Could not disable Scim account for: $($actionContext.Data.DisplayName). Error: $($errorObj.FriendlyMessage)"
+        $errorObj = Resolve-Generic-ScimError -Error $ex
+        $auditMessage = "Could not disable Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not disable Scim account for: $($actionContext.Data.DisplayName). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not disable Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
