@@ -16,7 +16,11 @@ function Get-ScimOAuthToken {
 
         [Parameter(Mandatory)]
         [string]
-        $ClientSecret
+        $ClientSecret,
+
+        [Parameter(Mandatory)]
+        [string]
+        $TokenUri
     )
 
     try {
@@ -27,10 +31,11 @@ function Get-ScimOAuthToken {
         $body = @{
             client_id     = $ClientID
             client_secret = $ClientSecret
-            grant_type    = 'client_credentials'
+            scope         = 'scim'
+            grant_type    = 'client_credentials'           
         }
 
-        Invoke-RestMethod -Uri $Uri -Method 'POST' -Body $body -Headers $headers
+        Invoke-RestMethod -Uri $TokenUri -Method 'POST' -Body $body -Headers $headers
     } catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
     }
@@ -82,11 +87,12 @@ function Invoke-ScimRestMethod {
             [System.Collections.Generic.List[object]]$dataList = @()
             do {
                 $startIndex = $dataList.Count
-                $splatParams['Uri'] = "$($baseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
-                $result = Invoke-RestMethod @splatParams
+                $splatParams['Uri'] = "$($actionContext.configuration.BaseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
+                $result = Invoke-RestMethod @splatParams            
                 foreach ($resource in $result.Resources) {
                     $dataList.Add($resource)
-                }
+                }                
+               
             } until ($dataList.Count -eq $TotalResults)
             Write-Output $dataList
         } else {
@@ -97,7 +103,37 @@ function Invoke-ScimRestMethod {
     }
 }
 
-function Resolve-HTTPError {
+function ConvertTo-HelloIDAccountObject {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [object]
+        $AccountObject
+    )
+    process {
+
+        # Making sure only fieldMapping fields are imported
+        $helloidAccountObject = [PSCustomObject]@{} 
+        foreach ($property in $actionContext.Data.PSObject.Properties) {
+            switch($property.Name){
+                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}                  
+                'IsEmailPrimary'        { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue "$($AccountObject.emails.primary)"}
+                'EmailAddressType'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.type}
+                'Username'              { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.userName}
+                'ExternalId'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.externalId}
+                'GivenName'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.givenName}
+                'NameFormatted'         { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.formatted}
+                'FamilyName'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyName}
+                'FamilyNamePrifix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
+                'IsEnabled'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.active}
+                default                 { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.$($property.Name)}
+            } 
+        }
+        Write-Output $helloidAccountObject
+    }
+}
+
+function Resolve-Generic-ScimError {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)]
@@ -135,10 +171,12 @@ function Resolve-HTTPError {
 try {
     # Initial Assignments
     $outputContext.AccountReference = 'Currently not available'
-
-    $accessToken = Get-ScimOAuthToken -ClientID $($actionContext.configuration.ClientID) -ClientSecret $($actionContext.configuration.ClientSecret)
+    $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl
+       
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
-    $headers.Add('Authorization', "Bearer $accessToken")
+    $headers.Add('Authorization', "$($accessToken.token_type) $($accessToken.access_token)")
+    $headers.Add('Accept', 'application/json')
+   
 
     # Validate correlation configuration
     if ($actionContext.CorrelationConfiguration.Enabled) {
@@ -158,8 +196,9 @@ try {
             Method  = 'Get'
             Headers = $headers
         }
-        $response = Invoke-ScimRestMethod @splatGetTotal
-        $totalResults = $response.totalResults
+        $response = Invoke-ScimRestMethod @splatGetTotal             
+        $totalResults = $response.totalResults           
+               
 
         Write-Information "Retrieving '$totalResults' users"
         $splatGetUsers = @{
@@ -170,16 +209,20 @@ try {
         }
         $responseAllUsers = Invoke-ScimRestMethod @splatGetUsers
 
-        Write-Information "Verifying if account for '$($actionContext.Data.DisplayName)' must be created or correlated"
-        $lookup = $responseAllUsers | Group-Object -Property 'ExternalId' -AsHashTable
-        $correlatedAccount = $lookup[$actionContext.Data.ExternalId]
+        Write-Information "Verifying if account for '$($actionContext.Data.NameFormatted)' must be created or correlated"
+        $lookup = $responseAllUsers | Group-Object -Property $correlationField -AsHashTable
+        
+        if ($lookup.count -ge 1) {
+            $correlatedAccount = $lookup[$correlationValue]
+        }        
     }
-
+    
     if ($null -ne $correlatedAccount) {
         $action = 'CorrelateAccount'
     } else {
         $action = 'CreateAccount'
     }
+    
 
     # Process
     switch ($action) {
@@ -225,7 +268,8 @@ try {
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information 'Creating and correlating Scim account'
                 $createdAccount = Invoke-ScimRestMethod @splatCreateParams
-                $outputContext.Data = $createdAccount
+                $outputContext.Data = ConvertTo-HelloIDAccountObject($createdAccount)
+                $outputContext.Data | Add-Member -NotePropertyName 'Id' -NotePropertyValue $createdAccount.Id
                 $outputContext.AccountReference = $createdAccount.Id
             } else {
                 Write-Information '[DryRun] Create and correlate Scim account, will be executed during enforcement'
@@ -236,8 +280,8 @@ try {
 
         'CorrelateAccount' {
             Write-Information 'Correlating Scim account'
-
-            $outputContext.Data = $correlatedAccount
+            $outputContext.Data = ConvertTo-HelloIDAccountObject($correlatedAccount)
+            $outputContext.Data | Add-Member -NotePropertyName 'Id' -NotePropertyValue $correlatedAccount.Id
             $outputContext.AccountReference = $correlatedAccount.Id
             $outputContext.AccountCorrelated = $true
             $auditLogMessage = "Correlated account: [$($outputContext.AccountReference)] on field: [$($correlationField)] with value: [$($correlationValue)]"
@@ -256,11 +300,11 @@ try {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
-        $errorObj = Resolve-HTTPError -Error $ex
-        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.DisplayName). Error: $($errorObj.FriendlyMessage)"
+        $errorObj = Resolve-Generic-ScimError -Error $ex
+        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.DisplayName). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{

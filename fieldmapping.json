@@ -138,7 +138,7 @@
         ]
       },
       {
-        "Name": "FamilyNameFormatted",
+        "Name": "FamilyNamePrefix",
         "Description": "",
         "Type": "Text",
         "MappingActions": [

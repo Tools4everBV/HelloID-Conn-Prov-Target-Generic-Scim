@@ -10,26 +10,62 @@
 
 ## Table of contents
 
-- [HelloID-Conn-Prov-Target-Generic-Scim](#helloid-conn-prov-target-generic-scim)
+- [HelloID-Conn-Prov-Target-Generic-Scim](#helloid-conn-prov-target-connectorname)
   - [Table of contents](#table-of-contents)
   - [Introduction](#introduction)
+  - [Supported features](#supported-features)
   - [Getting started](#getting-started)
+    - [HelloID Icon URL](#helloid-icon-url)
+    - [Requirements](#requirements)
     - [Connection settings](#connection-settings)
-    - [Prerequisites](#prerequisites)
-    - [Supported PowerShell versions](#supported-powershell-versions)
+    - [Correlation configuration](#correlation-configuration)
+    - [Field mapping](#field-mapping)
+    - [Account Reference](#account-reference)
   - [Remarks](#remarks)
-  - [Setup the connector](#setup-the-connector)
+  - [Development resources](#development-resources)
+    - [API endpoints](#api-endpoints)
+    - [API documentation](#api-documentation)
   - [Getting help](#getting-help)
-  - [Contributing](#contributing)
-  - [HelloID Docs](#helloid-docs)
-  - [Release history](#release-history)
-    - [Create/Update.ps1 (version: 1.0.0.3)](#createupdateps1-version-1003)
+  - [HelloID docs](#helloid-docs)
+
 
 ## Introduction
 
 The _'HelloID-Conn-Prov-Target-Generic-Scim'_ connector is a working example target connector based on scim based API's. http://www.simplecloud.info. You can use this connector as a basis for applications using an API based on SCIM. The example connector uses OAuth for authentication. Before implementing this connector in your environment, make sure to check if OAUth is supported or if there's a different method of authentication.
 
+## Supported features
+
+The following features are available:
+
+| Feature                                   | Supported | Actions                                 | Remarks           |
+| ----------------------------------------- | --------- | --------------------------------------- | ----------------- |
+| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete |                   |
+| **Permissions\Groups**                    | ✅         | Retrieve, Grant, Revoke                 | Static   |
+| **Resources**                             | ❌         | -                                       |                   |
+| **Entitlement Import: Accounts**          | ✅         | -                                       |                   |
+| **Entitlement Import: Permissions\groups**       | ✅         | -                                       |                   |
+| **Governance Reconciliation Resolutions** | ✅      | -                                       |                   |
+
+
 ## Getting started
+
+### HelloID Icon URL
+URL of the icon used for the HelloID Provisioning target system.
+```
+https://www.tools4ever.nl/connector-logos/scim-logo-2.png
+```
+
+### Requirements
+
+- When using the HelloID On-Premises agent, Windows PowerShell 5.1 must be installed.
+
+- When the connector needs to be modified, make sure to have installed VSCode/
+
+### Supported PowerShell versions
+
+The connector is created for both Windows PowerShell 5.1 and PowerShell Core. This means that the connector can be executed in both cloud and on-premises using the HelloID Agent.
+
+> Older versions of Windows PowerShell are not supported.
 
 ### Connection settings
 
@@ -37,19 +73,35 @@ The _'HelloID-Conn-Prov-Target-Generic-Scim'_ connector is a working example tar
 | ------------ | ----------- |
 | ClientID          | The ClientID for the SCIM API                      |
 | ClientSecret      | The ClientSecret for the SCIM API                  |
-| Uri               | The Uri to the SCIM API. <http://some-api/v1/scim> |
+| BaseUrl           | The Uri to the SCIM API. <http://some-api/scim>|
+| TokenUrl          | The Uri to the Token generation endpoint. <http://some-api/oauth/token>
 
-### Prerequisites
+### Correlation configuration
 
-- When using the HelloID On-Premises agent, Windows PowerShell 5.1 must be installed.
+The correlation configuration is used to specify which properties will be used to match an existing account within _{connectorName}_ to a person in _HelloID_.
 
-- When the connector needs to be modified, make sure to have installed VSCode/PowerShell extension.
+As this is a template, below values are only an example, it may differ for specific implementations.
 
-### Supported PowerShell versions
+| Setting                   | Value                             |
+| ------------------------- | --------------------------------- |
+| Enable correlation        | `True`                            |
+| Person correlation field  | `PersonContext.Person.ExternalId` |
+| Account correlation field | `ExternalId` 
 
-The connector is created for both Windows PowerShell 5.1 and PowerShell Core. This means that the connector can be executed in both cloud and on-premises using the HelloID Agent.
+                |
 
-> Older versions of Windows PowerShell are not supported.
+> [!TIP]
+> _For more information on correlation, please refer to our correlation [documentation](https://docs.helloid.com/en/provisioning/target-systems/powershell-v2-target-systems/correlation.html) pages_.
+
+
+### Field mapping
+
+The field mapping can be imported by using the _fieldMapping.json_ file.
+
+### Account Reference
+
+The account reference is populated with the property `id` 
+
 
 ## Remarks
 - There is duplicate mapping logic in both the *create* and *update*. If you modify the field mapping, be sure to update both files accordingly.
@@ -68,11 +120,29 @@ The connector is created for both Windows PowerShell 5.1 and PowerShell Core. Th
 
 5. Go to the _Configuration_ tab and fill in the required fields.
 
-| Parameter         | Description                                        |
-| ----------------- | -------------------------------------------------- |
-| ClientID          | The ClientID for the SCIM API                      |
-| ClientSecret      | The ClientSecret for the SCIM API                  |
-| Uri               | The Uri to the SCIM API. <http://some-api/v1/scim> |
+
+## Development resources
+
+### API endpoints
+
+The following endpoints are used by the connector
+
+| Endpoint | Description               |
+| -------- | ------------------------- |
+| GET /Users   | Retrieve user information, used in correlation and import |
+| GET /Users/{id} | Retrieve a specific user. used in update, enable,disable and delete |
+| POST /Users  | create an user |
+| PATCH /Users/{id} | update a specific user
+| GET /Groups     | Retrieve available groups. used in permissions.ps1, and import.ps1 |
+| PATCH /Groups   | add a member to a group |
+
+
+### API documentation
+
+
+https://scim.cloud/#Overview
+
+
 
 ## Getting help
 
@@ -86,11 +156,3 @@ Find a bug or have an idea! Open an issue or submit a pull request!
 
 The official HelloID documentation can be found at: https://docs.helloid.com/
 
-## Release history
-
-### Create/Update.ps1 (version: 1.0.0.3)
-
-- Create/Update both implement a 'Begin/Process/End' style.
-- Added 'Switch' statement to: _Create.ps1_ to accomodate a 'create' and 'correlate' action.
-- Improved errorHandling
-- Added inline documentation
