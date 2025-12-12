@@ -32,7 +32,7 @@ function Get-ScimOAuthToken {
             client_id     = $ClientID
             client_secret = $ClientSecret
             scope         = 'scim'
-            grant_type    = 'client_credentials'           
+            grant_type    = 'client_credentials'
         }
 
         Invoke-RestMethod -Uri $TokenUri -Method 'POST' -Body $body -Headers $headers
@@ -88,11 +88,11 @@ function Invoke-ScimRestMethod {
             do {
                 $startIndex = $dataList.Count
                 $splatParams['Uri'] = "$($actionContext.configuration.BaseUrl)/$($Uri)?startIndex=$startIndex&count=$count"
-                $result = Invoke-RestMethod @splatParams            
+                $result = Invoke-RestMethod @splatParams
                 foreach ($resource in $result.Resources) {
                     $dataList.Add($resource)
-                }                
-               
+                }
+
             } until ($dataList.Count -eq $TotalResults)
             Write-Output $dataList
         } else {
@@ -113,10 +113,11 @@ function ConvertTo-HelloIDAccountObject {
     process {
 
         # Making sure only fieldMapping fields are imported
-        $helloidAccountObject = [PSCustomObject]@{} 
+        $helloidAccountObject = [PSCustomObject]@{}
         foreach ($property in $actionContext.Data.PSObject.Properties) {
             switch($property.Name){
-                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}                  
+                'Id'                    { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.id}
+                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}
                 'IsEmailPrimary'        { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue "$($AccountObject.emails.primary)"}
                 'EmailAddressType'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.type}
                 'Username'              { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.userName}
@@ -124,10 +125,10 @@ function ConvertTo-HelloIDAccountObject {
                 'GivenName'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.givenName}
                 'NameFormatted'         { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.formatted}
                 'FamilyName'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyName}
-                'FamilyNamePrifix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
+                'FamilyNamePrefix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
                 'IsEnabled'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.active}
                 default                 { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.$($property.Name)}
-            } 
+            }
         }
         Write-Output $helloidAccountObject
     }
@@ -172,11 +173,11 @@ try {
     # Initial Assignments
     $outputContext.AccountReference = 'Currently not available'
     $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl
-       
+
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
     $headers.Add('Authorization', "$($accessToken.token_type) $($accessToken.access_token)")
     $headers.Add('Accept', 'application/json')
-   
+
 
     # Validate correlation configuration
     if ($actionContext.CorrelationConfiguration.Enabled) {
@@ -196,9 +197,9 @@ try {
             Method  = 'Get'
             Headers = $headers
         }
-        $response = Invoke-ScimRestMethod @splatGetTotal             
-        $totalResults = $response.totalResults           
-               
+        $response = Invoke-ScimRestMethod @splatGetTotal
+        $totalResults = $response.totalResults
+
 
         Write-Information "Retrieving '$totalResults' users"
         $splatGetUsers = @{
@@ -211,18 +212,18 @@ try {
 
         Write-Information "Verifying if account for '$($actionContext.Data.NameFormatted)' must be created or correlated"
         $lookup = $responseAllUsers | Group-Object -Property $correlationField -AsHashTable
-        
+
         if ($lookup.count -ge 1) {
             $correlatedAccount = $lookup[$correlationValue]
-        }        
+        }
     }
-    
+
     if ($null -ne $correlatedAccount) {
         $action = 'CorrelateAccount'
     } else {
         $action = 'CreateAccount'
     }
-    
+
 
     # Process
     switch ($action) {
@@ -269,7 +270,6 @@ try {
                 Write-Information 'Creating and correlating Scim account'
                 $createdAccount = Invoke-ScimRestMethod @splatCreateParams
                 $outputContext.Data = ConvertTo-HelloIDAccountObject($createdAccount)
-                $outputContext.Data | Add-Member -NotePropertyName 'Id' -NotePropertyValue $createdAccount.Id
                 $outputContext.AccountReference = $createdAccount.Id
             } else {
                 Write-Information '[DryRun] Create and correlate Scim account, will be executed during enforcement'
@@ -281,7 +281,6 @@ try {
         'CorrelateAccount' {
             Write-Information 'Correlating Scim account'
             $outputContext.Data = ConvertTo-HelloIDAccountObject($correlatedAccount)
-            $outputContext.Data | Add-Member -NotePropertyName 'Id' -NotePropertyValue $correlatedAccount.Id
             $outputContext.AccountReference = $correlatedAccount.Id
             $outputContext.AccountCorrelated = $true
             $auditLogMessage = "Correlated account: [$($outputContext.AccountReference)] on field: [$($correlationField)] with value: [$($correlationValue)]"
@@ -301,10 +300,10 @@ try {
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-Generic-ScimError -Error $ex
-        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
+        $auditMessage = "Could not create or correlate Scim account. Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not create or correlate Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not create or correlate Scim account. Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{

@@ -113,7 +113,7 @@ try {
 
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information "Deleting Scim account with accountReference: [$($actionContext.References.Account)]"
-                $null = Invoke-RestMethod @splatParams                
+                $null = Invoke-RestMethod @splatParams
             } else {
                 Write-Information "[DryRun] Delete Scim account with accountReference: [$($actionContext.References.Account)], will be executed during enforcement"
             }
@@ -142,10 +142,10 @@ try {
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-Generic-ScimError -Error $ex
-        $auditMessage = "Could not delete Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
+        $auditMessage = "Could not delete Scim account. Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not delete Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not delete Scim account. Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
