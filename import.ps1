@@ -84,10 +84,11 @@ function ConvertTo-HelloIDAccountObject {
     process {
 
         # Making sure only fieldMapping fields are imported
-        $helloidAcountObject = [PSCustomObject]@{} 
+        $helloidAcountObject = [PSCustomObject]@{}
         foreach ($field in $actionContext.ImportFields) {
             switch($field){
-                'EmailAddress'          { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.emails.value}                  
+                'Id'                    { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.id}
+                'EmailAddress'          { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.emails.value}
                 'IsEmailPrimary'        { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue "$($AccountObject.emails.primary)"}
                 'EmailAddressType'      { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.emails.type}
                 'Username'              { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.userName}
@@ -95,10 +96,10 @@ function ConvertTo-HelloIDAccountObject {
                 'GivenName'             { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.name.givenName}
                 'NameFormatted'         { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.name.formatted}
                 'FamilyName'            { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.name.familyName}
-                'FamilyNamePrifix'      { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.name.familyNamePrefix}
+                'FamilyNamePrefix'      { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.name.familyNamePrefix}
                 'IsEnabled'             { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.active}
                 default                 { $helloidAcountObject | Add-Member -NotePropertyName $field -NotePropertyValue $AccountObject.$field}
-            } 
+            }
         }
         Write-Output $helloidAcountObject
     }
@@ -108,11 +109,11 @@ function ConvertTo-HelloIDAccountObject {
 try {
 
     Write-Information 'Starting Generic-Scim account entitlement import'
-    $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl         
+    $accessToken = Get-ScimOAuthToken -ClientID $actionContext.configuration.ClientID -ClientSecret $actionContext.configuration.ClientSecret -TokenUri $ActionContext.Configuration.TokenUrl
     $headers = [System.Collections.Generic.Dictionary[string, string]]::new()
     $headers.Add('Authorization', "$($accessToken.token_type) $($accessToken.access_token)")
-    $headers.Add('Accept', 'application/json') 
-     
+    $headers.Add('Accept', 'application/json')
+
     $take = 20
     $startIndex = 0
     do {
@@ -122,16 +123,16 @@ try {
             Headers = $headers
         }
 
-        $response = Invoke-RestMethod @splatImportAccountParams                        
-        
-        $result = $response.Resources  
-        $totalResults = $response.totalResults                   
+        $response = Invoke-RestMethod @splatImportAccountParams
+
+        $result = $response.Resources
+        $totalResults = $response.totalResults
 
         if ($null -ne $result) {
             foreach ($importedAccount in $result) {
-                $data = ConvertTo-HelloIDAccountObject -AccountObject $importedAccount 
+                $data = ConvertTo-HelloIDAccountObject -AccountObject $importedAccount
 
-                # Set Enabled based on importedAccount status               
+                # Set Enabled based on importedAccount status
                 $isEnabled = $false
                 if ($importedAccount.active -eq $true) {
                     $isEnabled = $true
@@ -143,10 +144,10 @@ try {
                     $displayName = $importedAccount.Id
                 }
 
-                 # Make sure the userName has a value
+                # Make sure the userName has a value
                 $UserName =  $importedAccount.UserName
                 if ([string]::IsNullOrWhiteSpace($UserName)) {
-                   $UserName = $importedAccount.Id
+                    $UserName = $importedAccount.Id
                 }
 
                 Write-Output @{
@@ -158,9 +159,9 @@ try {
                 }
                 $startIndex++
             }
-        }              
-    } while (($result.count -gt 0) -and ($startIndex -lt $totalResults))   
-     
+        }
+    } while (($result.count -gt 0) -and ($startIndex -lt $totalResults))
+
     Write-Information 'Generic-Scim account entitlement import completed'
 } catch {
     $ex = $PSItem

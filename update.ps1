@@ -85,10 +85,11 @@ function ConvertTo-HelloIDAccountObject {
     process {
 
         # Making sure only fieldMapping fields are imported
-        $helloidAccountObject = [PSCustomObject]@{} 
+        $helloidAccountObject = [PSCustomObject]@{}
         foreach ($property in $actionContext.Data.PSObject.Properties) {
             switch($property.Name){
-                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}                  
+                'Id'                    { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.id}
+                'EmailAddress'          { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.value}
                 'IsEmailPrimary'        { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue "$($AccountObject.emails.primary)"}
                 'EmailAddressType'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.emails.type}
                 'Username'              { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.userName}
@@ -96,10 +97,10 @@ function ConvertTo-HelloIDAccountObject {
                 'GivenName'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.givenName}
                 'NameFormatted'         { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.formatted}
                 'FamilyName'            { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyName}
-                'FamilyNamePrifix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
+                'FamilyNamePrefix'      { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.name.familyNamePrefix}
                 'IsEnabled'             { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.active}
                 default                 { $helloidAccountObject | Add-Member -NotePropertyName $property.Name -NotePropertyValue $AccountObject.$($property.Name)}
-            } 
+            }
         }
         Write-Output $helloidAccountObject
     }
@@ -119,17 +120,17 @@ try {
 
     Write-Information 'Verifying if a Scim account exists'
     $splatGetUser = @{
-        Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
-        Method  = 'GET'
-        Headers = $headers
+        Uri         = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
+        Method      = 'GET'
+        Headers     = $headers
         ContentType = 'application/json'
     }
-    $correlatedAccount = Invoke-RestMethod @splatGetUser  
+    $correlatedAccount = Invoke-RestMethod @splatGetUser
 
     # Always compare the account against the current account in target system
     if ($null -ne $correlatedAccount) {
 
-        $targetAccount = ConvertTo-HelloIDAccountObject($correlatedAccount)        
+        $targetAccount = ConvertTo-HelloIDAccountObject($correlatedAccount)
 
         $outputContext.PreviousData = $targetAccount
 
@@ -247,10 +248,10 @@ try {
             } | ConvertTo-Json
 
             $splatUpdateUser = @{
-                Uri     = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
-                Headers = $headers
-                Body    = $body
-                Method  = 'Patch'
+                Uri         = "$($actionContext.Configuration.BaseUrl)/Users/$($actionContext.References.Account)"
+                Headers     = $headers
+                Body        = $body
+                Method      = 'Patch'
                 ContentType = 'application/json'
             }
 
@@ -300,10 +301,10 @@ try {
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-Generic-ScimError -Error $ex
-        $auditMessage = "Could not update Scim account for: $($actionContext.Data.NameFormatted). Error: $($errorObj.FriendlyMessage)"
+        $auditMessage = "Could not update Scim account. Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     } else {
-        $auditMessage = "Could not update Scim account for: $($actionContext.Data.NameFormatted). Error: $($ex.Exception.Message)"
+        $auditMessage = "Could not update Scim account. Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
